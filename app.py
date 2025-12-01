@@ -21,6 +21,18 @@ from models.lightgbm_model import train_lightgbm, predict_lightgbm, load_model a
 from evaluation.metrics import regression_metrics_report, financial_metrics_report
 from backtesting.strategy import TradingBacktester
 
+# Cache model loading
+@st.cache_resource
+def load_pretrained_models():
+    """Load pre-trained XGBoost and LightGBM models"""
+    try:
+        xgb_model = load_xgb('models/xgboost_next_day.json')
+        lgb_model = load_lgb('models/lightgbm_next_day.txt')
+        return xgb_model, lgb_model
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+        return None, None
+
 # Page configuration
 st.set_page_config(
     page_title="Stock Price Prediction Dashboard",
@@ -58,13 +70,6 @@ st.markdown('<h1 class="main-header">Stock Price Prediction System</h1>', unsafe
 st.markdown("**Machine Learning-Powered S&P 500 Predictions (1990-2024)**")
 st.markdown("---")
 
-# Sidebar
-st.sidebar.title("Configuration")
-page = st.sidebar.radio(
-    "Navigate",
-    ["Home", "Data Explorer", "Train Models", "Predictions", "Backtesting", "Performance"]
-)
-
 # Cache data loading
 @st.cache_data
 def load_data():
@@ -88,415 +93,207 @@ def load_engineered_features():
         st.warning("Engineered features not found. Please run feature engineering notebook first.")
         return None
 
-# ===================== HOME PAGE =====================
-if page == "Home":
-    st.header("Welcome to the Stock Price Prediction System!")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Data Range", "1990-2024", "34 years")
-    with col2:
-        st.metric("Total Observations", "8,599", "Daily data")
-    with col3:
-        st.metric("Features", "100+", "Engineered")
-    
-    st.markdown("---")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("What This System Does")
-        st.markdown("""
-        - **Predicts** S&P 500 price movements
-        - **Identifies** optimal buy/sell points
-        - **Evaluates** model performance with financial metrics
-        - **Backtests** trading strategies with realistic constraints
-        """)
-        
-        st.subheader("Models Available")
-        st.markdown("""
-        - **XGBoost** - Gradient boosting for regression
-        - **LightGBM** - Fast gradient boosting
-        - **LSTM** - Deep learning for time series
-        """)
-    
-    with col2:
-        st.subheader("Key Features")
-        st.markdown("""
-        - **Technical Indicators**: SMA, EMA, MACD, RSI, Bollinger Bands
-        - **Lag Features**: Historical prices and returns
-        - **Volatility Metrics**: VIX analysis and rolling volatility
-        - **Financial Metrics**: Sharpe ratio, max drawdown, win rate
-        """)
-        
-        st.subheader("Important Notes")
-        st.info("""
-        EDUCATIONAL PURPOSE ONLY: Stock prediction is inherently uncertain. 
-        Always consult financial professionals and never invest more than you 
-        can afford to lose.
-        """)
-    
-    # Load and display data preview
-    st.markdown("---")
-    st.subheader("Data Preview")
-    df = load_data()
-    if df is not None:
-        st.dataframe(df.head(100), height=300)
-        
-        # Quick stats
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Current S&P 500", f"${df['sp500'].iloc[-1]:.2f}")
-        with col2:
-            st.metric("30-Day Change", f"{df['sp500'].pct_change(30).iloc[-1]*100:.2f}%")
-        with col3:
-            st.metric("Latest VIX", f"{df['vix'].iloc[-1]:.2f}")
-        with col4:
-            st.metric("Volume (Latest)", f"{df['sp500_volume'].iloc[-1]/1e6:.1f}M")
+# Sidebar
+st.sidebar.title("Configuration")
+model_type = st.sidebar.selectbox("Select Model", ["XGBoost", "LightGBM"])
 
-# ===================== DATA EXPLORER =====================
-elif page == "Data Explorer":
-    st.header("Data Explorer")
-    
-    df = load_data()
-    if df is None:
-        st.error("Cannot load data!")
-        st.stop()
-    
-    # Date range selector
-    col1, col2 = st.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date", value=df.index.min())
-    with col2:
-        end_date = st.date_input("End Date", value=df.index.max())
-    
-    # Filter data
-    mask = (df.index >= pd.to_datetime(start_date)) & (df.index <= pd.to_datetime(end_date))
-    filtered_df = df[mask]
-    
-    # Plot S&P 500
-    st.subheader("S&P 500 Historical Price")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(filtered_df.index, filtered_df['sp500'], linewidth=1.5, color='steelblue')
-    ax.set_xlabel('Date')
-    ax.set_ylabel('S&P 500 Price')
-    ax.set_title('S&P 500 Price Over Time')
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-    
-    # Multiple features plot
-    st.subheader("Feature Comparison")
-    features_to_plot = st.multiselect(
-        "Select features to plot",
-        options=['sp500', 'vix', 'djia', 'hsi', 'sp500_volume'],
-        default=['sp500', 'vix']
+# Load data
+df_features = load_engineered_features()
+df_raw = load_data()
+
+if df_features is None or df_raw is None:
+    st.stop()
+
+# Date Selection
+min_date = df_features.index.min().date()
+max_date = df_features.index.max().date()
+
+st.sidebar.markdown("---")
+prediction_mode = st.sidebar.radio("Prediction Mode", ["Historical Data", "Future Scenario"])
+
+if prediction_mode == "Historical Data":
+    selected_date = st.sidebar.date_input(
+        "Select Date for Prediction",
+        value=max_date,
+        min_value=min_date,
+        max_value=max_date
     )
+else:
+    selected_date = st.sidebar.date_input(
+        "Select Future Date",
+        value=pd.Timestamp.now().date()
+    )
+
+# Load Models
+xgb_model, lgb_model = load_pretrained_models()
+if xgb_model is None or lgb_model is None:
+    st.error("Models not found. Please run train_models.py first.")
+    st.stop()
+
+model = xgb_model if model_type == "XGBoost" else lgb_model
+
+# Main Content
+st.title(f"S&P 500 Prediction Dashboard")
+
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.subheader("Prediction")
     
-    if features_to_plot:
-        fig, ax = plt.subplots(figsize=(14, 6))
-        for feature in features_to_plot:
-            if feature in filtered_df.columns:
-                # Normalize for comparison
-                normalized = (filtered_df[feature] - filtered_df[feature].min()) / \
-                           (filtered_df[feature].max() - filtered_df[feature].min())
-                ax.plot(filtered_df.index, normalized, label=feature, linewidth=1.5, alpha=0.7)
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Normalized Value')
-        ax.set_title('Normalized Feature Comparison')
+    # Handle date selection
+    check_date = pd.Timestamp(selected_date)
+    
+    if prediction_mode == "Historical Data":
+        # Find nearest available date if selected date is not in index
+        if check_date not in df_features.index:
+            # Find nearest date
+            nearest_idx = df_features.index.get_indexer([check_date], method='nearest')[0]
+            actual_date = df_features.index[nearest_idx]
+            st.warning(f"Data not available for {selected_date}. Using nearest date: {actual_date.date()}")
+            check_date = actual_date
+        
+        # Get features for the date
+        row = df_features.loc[[check_date]]
+        
+    else:
+        # Future Scenario Mode
+        st.info("Scenario Mode: Using latest known market data as baseline. Adjust key indicators below.")
+        
+        # Get latest known data as baseline
+        latest_date = df_features.index.max()
+        baseline_row = df_features.loc[[latest_date]].copy()
+        
+        # Allow user to adjust key features
+        current_price = st.number_input("Current S&P 500 Price", value=float(baseline_row['sp500'].values[0]))
+        current_vix = st.number_input("Current VIX", value=float(baseline_row['vix'].values[0]))
+        
+        # Update baseline row with user inputs
+        baseline_row['sp500'] = current_price
+        baseline_row['vix'] = current_vix
+        
+        # Use this modified row for prediction
+        row = baseline_row
+        check_date = pd.Timestamp(selected_date) # Use user's future date for display
+
+    # Prepare features
+    target_columns = [col for col in df_features.columns if 'target' in col]
+    feature_cols = [col for col in df_features.columns if col not in target_columns and col != 'sp500']
+    X_input = row[feature_cols]
+    
+    # Predict
+    if model_type == "XGBoost":
+        prediction = predict_xgboost(model, X_input)[0]
+    else:
+        prediction = predict_lightgbm(model, X_input)[0]
+    
+    # Display Prediction
+    st.metric("Predicted Price (Next Day)", f"${prediction:.2f}")
+    
+    if prediction_mode == "Historical Data":
+        # If we have actual target for this date (meaning we know what happened next day)
+        # Note: target_next_day is the price of the NEXT day.
+        # If we want to compare with actual price of the NEXT day:
+        if len(target_columns) > 0:
+            target_col = target_columns[0]
+            if not pd.isna(row[target_col].values[0]):
+                actual_next_day = row[target_col].values[0]
+                diff = actual_next_day - prediction
+                pct_error = (diff / actual_next_day) * 100
+                
+                st.metric("Actual Next Day Price", f"${actual_next_day:.2f}")
+                st.metric("Prediction Error", f"${diff:.2f} ({pct_error:.2f}%)")
+                
+                if abs(pct_error) < 1.0:
+                    st.success("High Accuracy Prediction!")
+                elif abs(pct_error) < 3.0:
+                    st.info("Moderate Accuracy")
+                else:
+                    st.warning("Low Accuracy")
+            else:
+                st.info("Actual next day price not yet available in dataset.")
+    else:
+        # Future mode - show implied change
+        current_p = row['sp500'].values[0]
+        change = prediction - current_p
+        pct = (change / current_p) * 100
+        st.metric("Implied Change", f"{change:.2f} ({pct:.2f}%)")
+
+with col2:
+    st.subheader("Market Data Visualization")
+    
+    if prediction_mode == "Historical Data":
+        # Filter data for chart (show +/- 180 days around selected date)
+        window_days = 180
+        start_plot = check_date - pd.Timedelta(days=window_days)
+        end_plot = check_date + pd.Timedelta(days=window_days)
+        
+        mask = (df_raw.index >= start_plot) & (df_raw.index <= end_plot)
+        plot_data = df_raw[mask]
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(plot_data.index, plot_data['sp500'], label='S&P 500', linewidth=2)
+        
+        # Highlight the selected date (which is the date OF prediction, i.e. today)
+        current_price = row['sp500'].values[0] if 'sp500' in row else None
+        if current_price:
+            ax.scatter([check_date], [current_price], color='black', s=100, zorder=5, label='Selected Date')
+        
+        # Highlight the predicted next day price
+        # We plot it at check_date + 1 day (approx)
+        next_day_date = check_date + pd.Timedelta(days=1)
+        ax.scatter([next_day_date], [prediction], color='red', s=100, marker='*', zorder=5, label='Prediction (Next Day)')
+        
+        ax.set_title(f"S&P 500 Price Context ({start_plot.date()} - {end_plot.date()})")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Price")
         ax.legend()
         ax.grid(True, alpha=0.3)
+        
         st.pyplot(fig)
-    
-    # Statistics
-    st.subheader("Statistical Summary")
-    st.dataframe(filtered_df.describe())
+    else:
+        # Future mode visualization
+        # Show recent history + projected point
+        recent_days = 90
+        plot_data = df_raw.tail(recent_days)
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(plot_data.index, plot_data['sp500'], label='Historical S&P 500', linewidth=2)
+        
+        # Plot the "Current" scenario point (user input)
+        scenario_date = check_date
+        scenario_price = row['sp500'].values[0]
+        ax.scatter([scenario_date], [scenario_price], color='orange', s=100, zorder=5, label='Scenario Input (Current)')
+        
+        # Plot the prediction (Next Day)
+        pred_date = scenario_date + pd.Timedelta(days=1)
+        ax.scatter([pred_date], [prediction], color='red', s=100, marker='*', zorder=5, label='Prediction (Next Day)')
+        
+        # Connect the lines
+        last_hist_date = plot_data.index[-1]
+        last_hist_price = plot_data['sp500'].iloc[-1]
+        
+        # Draw dashed line from history to scenario point
+        ax.plot([last_hist_date, scenario_date], [last_hist_price, scenario_price], 'k--', alpha=0.5)
+        # Draw dashed line from scenario to prediction
+        ax.plot([scenario_date, pred_date], [scenario_price, prediction], 'r--', alpha=0.5)
+        
+        ax.set_title(f"Future Scenario Projection")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Price")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        st.pyplot(fig)
 
-# ===================== TRAIN MODELS =====================
-elif page == "Train Models":
-    st.header("Train Prediction Models")
-    
-    df_features = load_engineered_features()
-    if df_features is None:
-        st.error("Please run the feature engineering notebook first!")
-        st.code("jupyter notebook notebooks/02_feature_engineering.ipynb")
-        st.stop()
-    
-    st.success(f"Features loaded: {df_features.shape[1]} columns, {df_features.shape[0]} rows")
-    
-    # Target selection
-    st.subheader("1. Select Target Variable")
-    target_options = [col for col in df_features.columns if 'target' in col]
-    target_col = st.selectbox("Choose prediction target", target_options)
-    
-    # Model selection
-    st.subheader("2. Select Model")
-    model_type = st.selectbox("Choose model type", ["XGBoost", "LightGBM"])
-    
-    # Train/test split configuration
-    st.subheader("3. Configure Train/Test Split")
-    col1, col2 = st.columns(2)
-    with col1:
-        train_end = st.date_input("Training end date", value=pd.to_datetime('2018-12-31'))
-    with col2:
-        val_end = st.date_input("Validation end date", value=pd.to_datetime('2021-12-31'))
-    
-    # Training button
-    if st.button("Train Model", type="primary"):
-        with st.spinner(f"Training {model_type} model..."):
-            try:
-                # Prepare data
-                target_columns = [col for col in df_features.columns if 'target' in col]
-                feature_cols = [col for col in df_features.columns if col not in target_columns and col != 'sp500']
-                
-                X = df_features[feature_cols]
-                y = df_features[target_col]
-                
-                # Drop missing
-                valid_idx = y.notna()
-                X = X[valid_idx]
-                y = y[valid_idx]
-                
-                # Split
-                train_data, val_data, test_data = temporal_train_test_split(
-                    pd.concat([X, y, df_features.loc[valid_idx, 'sp500']], axis=1),
-                    train_end=train_end.strftime('%Y-%m-%d'),
-                    val_end=val_end.strftime('%Y-%m-%d')
-                )
-                
-                X_train = train_data[feature_cols]
-                y_train = train_data[target_col]
-                X_val = val_data[feature_cols]
-                y_val = val_data[target_col]
-                X_test = test_data[feature_cols]
-                y_test = test_data[target_col]
-                
-                # Train
-                if model_type == "XGBoost":
-                    model, evals_result = train_xgboost(X_train, y_train, X_val, y_val)
-                    predictions = predict_xgboost(model, X_test)
-                else:
-                    model, evals_result = train_lightgbm(X_train, y_train, X_val, y_val)
-                    predictions = predict_lightgbm(model, X_test)
-                
-                # Evaluate
-                metrics = regression_metrics_report(y_test.values, predictions)
-                
-                st.success("Model trained successfully!")
-                
-                # Display metrics
-                st.subheader("Performance Metrics")
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("MAE", f"{metrics['MAE']:.4f}")
-                with col2:
-                    st.metric("RMSE", f"{metrics['RMSE']:.4f}")
-                with col3:
-                    st.metric("R² Score", f"{metrics['R2']:.4f}")
-                with col4:
-                    st.metric("Dir. Accuracy", f"{metrics['Directional_Accuracy']:.2f}%")
-                
-                # Store in session state
-                st.session_state['model'] = model
-                st.session_state['model_type'] = model_type
-                st.session_state['predictions'] = predictions
-                st.session_state['y_test'] = y_test
-                st.session_state['test_data'] = test_data
-                st.session_state['metrics'] = metrics
-                
-            except Exception as e:
-                st.error(f"Error training model: {e}")
-                import traceback
-                st.code(traceback.format_exc())
-
-# ===================== PREDICTIONS =====================
-elif page == "Predictions":
-    st.header("Model Predictions")
-    
-    if 'model' not in st.session_state:
-        st.warning("Please train a model first!")
-        st.info("Go to 'Train Models' page to train a model.")
-        st.stop()
-    
-    st.success(f"Model loaded: {st.session_state['model_type']}")
-    
-    predictions = st.session_state['predictions']
-    y_test = st.session_state['y_test']
-    test_data = st.session_state['test_data']
-    
-    # Predictions vs Actual
-    st.subheader("Predictions vs Actual Prices")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(test_data.index, y_test.values, label='Actual', linewidth=2, alpha=0.8)
-    ax.plot(test_data.index, predictions, label='Predicted', linewidth=2, alpha=0.8)
-    ax.set_xlabel('Date', fontsize=12)
-    ax.set_ylabel('S&P 500 Price', fontsize=12)
-    ax.set_title('Actual vs Predicted Stock Prices', fontsize=14, fontweight='bold')
-    ax.legend(fontsize=11)
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-    
-    # Prediction errors
-    st.subheader("Prediction Errors Over Time")
-    errors = y_test.values - predictions
-    fig, ax = plt.subplots(figsize=(14, 5))
-    ax.bar(test_data.index, errors, color=['red' if e < 0 else 'green' for e in errors], alpha=0.6)
-    ax.axhline(0, color='black', linestyle='--', linewidth=1)
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Error (Actual - Predicted)')
-    ax.set_title('Prediction Errors')
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-    
-    # Scatter plot
-    st.subheader("Prediction Scatter Plot")
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.scatter(y_test.values, predictions, alpha=0.5, s=30)
-    ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
-            'r--', linewidth=2, label='Perfect Prediction')
-    ax.set_xlabel('Actual Price', fontsize=12)
-    ax.set_ylabel('Predicted Price', fontsize=12)
-    ax.set_title('Prediction Accuracy', fontsize=14, fontweight='bold')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
-
-# ===================== BACKTESTING =====================
-elif page == "Backtesting":
-    st.header("Trading Strategy Backtesting")
-    
-    if 'predictions' not in st.session_state:
-        st.warning("Please train a model first!")
-        st.stop()
-    
-    # Backtesting configuration
-    st.subheader("Configuration")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        initial_capital = st.number_input("Initial Capital ($)", value=10000, step=1000)
-    with col2:
-        transaction_cost = st.number_input("Transaction Cost (%)", value=0.1, step=0.05) / 100
-    with col3:
-        slippage = st.number_input("Slippage (%)", value=0.05, step=0.01) / 100
-    
-    if st.button("Run Backtest", type="primary"):
-        with st.spinner("Running backtest..."):
-            try:
-                predictions = st.session_state['predictions']
-                test_data = st.session_state['test_data']
-                
-                # Run backtest
-                backtester = TradingBacktester(
-                    initial_capital=initial_capital,
-                    transaction_cost=transaction_cost,
-                    slippage=slippage
-                )
-                
-                results = backtester.run_backtest(
-                    test_data,
-                    predictions,
-                    price_column='sp500'
-                )
-                
-                st.session_state['backtest_results'] = results
-                
-                st.success("Backtest completed!")
-                
-                # Display results
-                st.subheader("Backtest Results")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Return", f"{results['total_return_%']:.2f}%")
-                with col2:
-                    st.metric("Sharpe Ratio", f"{results['sharpe_ratio']:.2f}")
-                with col3:
-                    st.metric("Max Drawdown", f"{results['max_drawdown_%']:.2f}%")
-                with col4:
-                    st.metric("Win Rate", f"{results['win_rate_%']:.2f}%")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Final Capital", f"${results['final_capital']:.2f}")
-                with col2:
-                    st.metric("Total Trades", results['num_trades'])
-                with col3:
-                    st.metric("Best Trade", f"{results.get('best_trade_%', 0):.2f}%")
-                with col4:
-                    st.metric("Worst Trade", f"{results.get('worst_trade_%', 0):.2f}%")
-                
-                # Equity curve
-                if len(results['equity_curve']) > 0:
-                    st.subheader("Portfolio Equity Curve")
-                    fig, ax = plt.subplots(figsize=(14, 6))
-                    ax.plot(results['equity_curve'], linewidth=2, color='green')
-                    ax.axhline(initial_capital, color='red', linestyle='--', 
-                              label=f'Initial Capital (${initial_capital})', linewidth=1.5)
-                    ax.fill_between(range(len(results['equity_curve'])), 
-                                   initial_capital, results['equity_curve'], 
-                                   alpha=0.3, color='green')
-                    ax.set_xlabel('Trade Number')
-                    ax.set_ylabel('Portfolio Value ($)')
-                    ax.set_title('Portfolio Performance Over Time', fontweight='bold')
-                    ax.legend()
-                    ax.grid(True, alpha=0.3)
-                    st.pyplot(fig)
-                
-                # Trades log
-                if len(results['trades_log']) > 0:
-                    st.subheader("Trade History")
-                    st.dataframe(results['trades_log'])
-                
-            except Exception as e:
-                st.error(f"Error in backtesting: {e}")
-
-# ===================== PERFORMANCE =====================
-elif page == "Performance":
-    st.header("Model Performance Analysis")
-    
-    if 'metrics' not in st.session_state:
-        st.warning("Please train a model first!")
-        st.stop()
-    
-    metrics = st.session_state['metrics']
-    
-    # Metrics overview
-    st.subheader("Performance Metrics")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### Regression Metrics")
-        for metric, value in metrics.items():
-            if metric != 'Confusion_Matrix':
-                st.metric(metric, f"{value:.4f}")
-    
-    with col2:
-        if 'backtest_results' in st.session_state:
-            st.markdown("### Financial Metrics")
-            br = st.session_state['backtest_results']
-            st.metric("Total Return", f"{br['total_return_%']:.2f}%")
-            st.metric("Sharpe Ratio", f"{br['sharpe_ratio']:.2f}")
-            st.metric("Max Drawdown", f"{br['max_drawdown_%']:.2f}%")
-            st.metric("Win Rate", f"{br['win_rate_%']:.2f}%")
-            st.metric("Profit Factor", f"{br.get('profit_factor', 0):.2f}")
-    
-    # Comparison chart
-    st.subheader("Metrics Comparison")
-    fig, ax = plt.subplots(figsize=(10, 6))
-    metric_names = [k for k in metrics.keys() if k != 'Confusion_Matrix']
-    metric_values = [metrics[k] for k in metric_names]
-    ax.barh(metric_names, metric_values, color='steelblue')
-    ax.set_xlabel('Value')
-    ax.set_title('Model Performance Metrics', fontweight='bold')
-    ax.grid(True, alpha=0.3)
-    st.pyplot(fig)
+st.markdown("---")
+st.subheader("Feature Insights")
+with st.expander("View Input Features"):
+    st.dataframe(row)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center'>
-    <p>Stock Price Prediction System | Built with Streamlit, XGBoost, LightGBM, LSTM</p>
-    <p><i>WARNING: For educational purposes only. Not financial advice.</i></p>
+    <p>Stock Price Prediction System | Built with Streamlit, XGBoost, LightGBM</p>
 </div>
 """, unsafe_allow_html=True)
