@@ -198,13 +198,18 @@ class TradingBacktester:
         predicted_changes = predictions - prices
         predicted_returns = predicted_changes / prices
         
+        # Track position state: 0 = no position, 1 = holding position
+        current_position = 0
+        
         for i in range(1, len(signals)):
-            # Buy if significant predicted increase
-            if predicted_returns[i] > threshold and signals[i-1] != 1:
+            # Buy if significant predicted increase AND we don't have a position
+            if predicted_returns[i] > threshold and current_position == 0:
                 signals[i] = 1
-            # Sell if significant predicted decrease or currently in position
-            elif predicted_returns[i] < -threshold and signals[i-1] == 1:
+                current_position = 1
+            # Sell if significant predicted decrease AND we have a position
+            elif predicted_returns[i] < -threshold and current_position == 1:
                 signals[i] = -1
+                current_position = 0
             else:
                 signals[i] = 0
         

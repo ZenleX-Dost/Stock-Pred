@@ -76,6 +76,7 @@ def train_lightgbm(X_train: pd.DataFrame,
     print("Training LightGBM model...")
     print(f"Parameters: {default_params}")
     
+    # In recent LightGBM versions, evaluation results are recorded via callbacks
     evals_result = {}
     model = lgb.train(
         default_params,
@@ -85,9 +86,9 @@ def train_lightgbm(X_train: pd.DataFrame,
         valid_names=['train', 'val'],
         callbacks=[
             lgb.early_stopping(stopping_rounds=early_stopping_rounds),
-            lgb.log_evaluation(period=100)
+            lgb.log_evaluation(period=100),
+            lgb.record_evaluation(evals_result)
         ],
-        evals_result=evals_result
     )
     
     print(f"\nBest iteration: {model.best_iteration}")

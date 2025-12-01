@@ -24,7 +24,7 @@ from backtesting.strategy import TradingBacktester
 # Page configuration
 st.set_page_config(
     page_title="Stock Price Prediction Dashboard",
-    page_icon="📈",
+    page_icon="[CHART]",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -54,15 +54,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Title
-st.markdown('<h1 class="main-header">📈 Stock Price Prediction System</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">Stock Price Prediction System</h1>', unsafe_allow_html=True)
 st.markdown("**Machine Learning-Powered S&P 500 Predictions (1990-2024)**")
 st.markdown("---")
 
 # Sidebar
-st.sidebar.title("⚙️ Configuration")
+st.sidebar.title("Configuration")
 page = st.sidebar.radio(
     "Navigate",
-    ["🏠 Home", "📊 Data Explorer", "🤖 Train Models", "📈 Predictions", "💰 Backtesting", "📉 Performance"]
+    ["Home", "Data Explorer", "Train Models", "Predictions", "Backtesting", "Performance"]
 )
 
 # Cache data loading
@@ -89,24 +89,24 @@ def load_engineered_features():
         return None
 
 # ===================== HOME PAGE =====================
-if page == "🏠 Home":
+if page == "Home":
     st.header("Welcome to the Stock Price Prediction System!")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("📅 Data Range", "1990-2024", "34 years")
+        st.metric("Data Range", "1990-2024", "34 years")
     with col2:
-        st.metric("📊 Total Observations", "8,599", "Daily data")
+        st.metric("Total Observations", "8,599", "Daily data")
     with col3:
-        st.metric("🔢 Features", "100+", "Engineered")
+        st.metric("Features", "100+", "Engineered")
     
     st.markdown("---")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("🎯 What This System Does")
+        st.subheader("What This System Does")
         st.markdown("""
         - **Predicts** S&P 500 price movements
         - **Identifies** optimal buy/sell points
@@ -114,7 +114,7 @@ if page == "🏠 Home":
         - **Backtests** trading strategies with realistic constraints
         """)
         
-        st.subheader("⚡ Models Available")
+        st.subheader("Models Available")
         st.markdown("""
         - **XGBoost** - Gradient boosting for regression
         - **LightGBM** - Fast gradient boosting
@@ -122,7 +122,7 @@ if page == "🏠 Home":
         """)
     
     with col2:
-        st.subheader("📈 Key Features")
+        st.subheader("Key Features")
         st.markdown("""
         - **Technical Indicators**: SMA, EMA, MACD, RSI, Bollinger Bands
         - **Lag Features**: Historical prices and returns
@@ -130,16 +130,16 @@ if page == "🏠 Home":
         - **Financial Metrics**: Sharpe ratio, max drawdown, win rate
         """)
         
-        st.subheader("⚠️ Important Notes")
+        st.subheader("Important Notes")
         st.info("""
-        This is for **educational purposes only**. Stock prediction is inherently 
-        uncertain. Always consult financial professionals and never invest more 
-        than you can afford to lose.
+        EDUCATIONAL PURPOSE ONLY: Stock prediction is inherently uncertain. 
+        Always consult financial professionals and never invest more than you 
+        can afford to lose.
         """)
     
     # Load and display data preview
     st.markdown("---")
-    st.subheader("📊 Data Preview")
+    st.subheader("Data Preview")
     df = load_data()
     if df is not None:
         st.dataframe(df.head(100), height=300)
@@ -156,8 +156,8 @@ if page == "🏠 Home":
             st.metric("Volume (Latest)", f"{df['sp500_volume'].iloc[-1]/1e6:.1f}M")
 
 # ===================== DATA EXPLORER =====================
-elif page == "📊 Data Explorer":
-    st.header("📊 Data Explorer")
+elif page == "Data Explorer":
+    st.header("Data Explorer")
     
     df = load_data()
     if df is None:
@@ -213,8 +213,8 @@ elif page == "📊 Data Explorer":
     st.dataframe(filtered_df.describe())
 
 # ===================== TRAIN MODELS =====================
-elif page == "🤖 Train Models":
-    st.header("🤖 Train Prediction Models")
+elif page == "Train Models":
+    st.header("Train Prediction Models")
     
     df_features = load_engineered_features()
     if df_features is None:
@@ -225,16 +225,16 @@ elif page == "🤖 Train Models":
     st.success(f"Features loaded: {df_features.shape[1]} columns, {df_features.shape[0]} rows")
     
     # Target selection
-    st.subheader("1️⃣ Select Target Variable")
+    st.subheader("1. Select Target Variable")
     target_options = [col for col in df_features.columns if 'target' in col]
     target_col = st.selectbox("Choose prediction target", target_options)
     
     # Model selection
-    st.subheader("2️⃣ Select Model")
+    st.subheader("2. Select Model")
     model_type = st.selectbox("Choose model type", ["XGBoost", "LightGBM"])
     
     # Train/test split configuration
-    st.subheader("3️⃣ Configure Train/Test Split")
+    st.subheader("3. Configure Train/Test Split")
     col1, col2 = st.columns(2)
     with col1:
         train_end = st.date_input("Training end date", value=pd.to_datetime('2018-12-31'))
@@ -242,7 +242,7 @@ elif page == "🤖 Train Models":
         val_end = st.date_input("Validation end date", value=pd.to_datetime('2021-12-31'))
     
     # Training button
-    if st.button("🚀 Train Model", type="primary"):
+    if st.button("Train Model", type="primary"):
         with st.spinner(f"Training {model_type} model..."):
             try:
                 # Prepare data
@@ -259,7 +259,7 @@ elif page == "🤖 Train Models":
                 
                 # Split
                 train_data, val_data, test_data = temporal_train_test_split(
-                    pd.concat([X, y], axis=1),
+                    pd.concat([X, y, df_features.loc[valid_idx, 'sp500']], axis=1),
                     train_end=train_end.strftime('%Y-%m-%d'),
                     val_end=val_end.strftime('%Y-%m-%d')
                 )
@@ -282,10 +282,10 @@ elif page == "🤖 Train Models":
                 # Evaluate
                 metrics = regression_metrics_report(y_test.values, predictions)
                 
-                st.success("✅ Model trained successfully!")
+                st.success("Model trained successfully!")
                 
                 # Display metrics
-                st.subheader("📊 Performance Metrics")
+                st.subheader("Performance Metrics")
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("MAE", f"{metrics['MAE']:.4f}")
@@ -310,12 +310,12 @@ elif page == "🤖 Train Models":
                 st.code(traceback.format_exc())
 
 # ===================== PREDICTIONS =====================
-elif page == "📈 Predictions":
-    st.header("📈 Model Predictions")
+elif page == "Predictions":
+    st.header("Model Predictions")
     
     if 'model' not in st.session_state:
-        st.warning("⚠️ Please train a model first!")
-        st.info("Go to '🤖 Train Models' page to train a model.")
+        st.warning("Please train a model first!")
+        st.info("Go to 'Train Models' page to train a model.")
         st.stop()
     
     st.success(f"Model loaded: {st.session_state['model_type']}")
@@ -362,11 +362,11 @@ elif page == "📈 Predictions":
     st.pyplot(fig)
 
 # ===================== BACKTESTING =====================
-elif page == "💰 Backtesting":
-    st.header("💰 Trading Strategy Backtesting")
+elif page == "Backtesting":
+    st.header("Trading Strategy Backtesting")
     
     if 'predictions' not in st.session_state:
-        st.warning("⚠️ Please train a model first!")
+        st.warning("Please train a model first!")
         st.stop()
     
     # Backtesting configuration
@@ -379,7 +379,7 @@ elif page == "💰 Backtesting":
     with col3:
         slippage = st.number_input("Slippage (%)", value=0.05, step=0.01) / 100
     
-    if st.button("🔄 Run Backtest", type="primary"):
+    if st.button("Run Backtest", type="primary"):
         with st.spinner("Running backtest..."):
             try:
                 predictions = st.session_state['predictions']
@@ -400,10 +400,10 @@ elif page == "💰 Backtesting":
                 
                 st.session_state['backtest_results'] = results
                 
-                st.success("✅ Backtest completed!")
+                st.success("Backtest completed!")
                 
                 # Display results
-                st.subheader("📊 Backtest Results")
+                st.subheader("Backtest Results")
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
@@ -444,18 +444,18 @@ elif page == "💰 Backtesting":
                 
                 # Trades log
                 if len(results['trades_log']) > 0:
-                    st.subheader("📋 Trade History")
+                    st.subheader("Trade History")
                     st.dataframe(results['trades_log'])
                 
             except Exception as e:
                 st.error(f"Error in backtesting: {e}")
 
 # ===================== PERFORMANCE =====================
-elif page == "📉 Performance":
-    st.header("📉 Model Performance Analysis")
+elif page == "Performance":
+    st.header("Model Performance Analysis")
     
     if 'metrics' not in st.session_state:
-        st.warning("⚠️ Please train a model first!")
+        st.warning("Please train a model first!")
         st.stop()
     
     metrics = st.session_state['metrics']
@@ -497,6 +497,6 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align: center'>
     <p>Stock Price Prediction System | Built with Streamlit, XGBoost, LightGBM, LSTM</p>
-    <p><i>⚠️ For educational purposes only. Not financial advice.</i></p>
+    <p><i>WARNING: For educational purposes only. Not financial advice.</i></p>
 </div>
 """, unsafe_allow_html=True)
